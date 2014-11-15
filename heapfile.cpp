@@ -1,37 +1,54 @@
 #include "heapfile.h"
 #include "error.h"
 
+#define CHKSTAT2(c) { if(c != OK) { \
+                          returnStatus c; \
+                        } \
+                      }
+
 // routine to create a heapfile
 const Status createHeapFile(const string fileName)
 {
-    File* 		file;
-    Status 		status;
-    FileHdrPage*	hdrPage;
-    int			hdrPageNo;
-    int			newPageNo;
-    Page*		newPage;
+  File* 		file;
+  Status 		status;
+  FileHdrPage*	hdrPage;
+  int			hdrPageNo;
+  int			newPageNo;
+  Page*		newPage;
 
-    // try to open the file. This should return an error
-    status = db.openFile(fileName, file);
-    if (status != OK)
+  // try to open the file. This should return an error
+  status = db.openFile(fileName, file);
+  if (status != OK)
     {
-		// file doesn't exist. First create it and allocate
-		// an empty header page and data page.
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
+      // file doesn't exist. First create it and allocate
+      // an empty header page and data page.
+      status =  db.createFile(fileName);
+      CHKSTAT(status); //BADFILE, FILEEXISTS, UNIXERR
+      status = db.openFile(fileName, file);
+      CHKSTAT(statues); //BADFILE, UNIXERR
+      // initialize fileHdrPage
+      Page* headerPage;
+      status = db.bufMgr->allocPage(file, hdrPageNo, headerPage);
+      CHKSTAT(status); //UNIXERR, HASHTBLERR, BUFFEREXCEEDED
+      hdrPage = (FileHdrPage*) headerPage;
+      // initialize header page struct
+      strcpy(hdrPage->fileName, fileName);
+      hdrPage->pageCnt = 1;
+      hdrPage->recCnt = 0;
+      // initializr first data page
+      Page* firstDataPage;
+      status = db.bufMgr->allocPage(file, hdrPage.firstPage, firstDataPage);
+      CHKSTAT(status); //UNIXERR, HASHTBLERR, BUFFEREXCEEDED
+      firstDataPage.init();
+      hdrPage.lastPage = hdrPage.firstPage();
+      // unpin, dirty
+      status = db.bufMgr->unPinPage(file, hdrPage.firstPage, true);
+      CHKSTAT(status); //HASHNOTFOUND, PAGENOTPINNED
+      status = db.bugMgr->unpinPage(file, hdrPageNo, true);
+      CHKSTAT(status); //HASHNOTFOUND, PAGENOTPINNED
+      return OK;
     }
-    return (FILEEXISTS);
+  return (FILEEXISTS);
 }
 
 // routine to destroy a heapfile
@@ -43,31 +60,34 @@ const Status destroyHeapFile(const string fileName)
 // constructor opens the underlying file
 HeapFile::HeapFile(const string & fileName, Status& returnStatus)
 {
-    Status 	status;
-    Page*	pagePtr;
+  Status 	status;
+  Page*	pagePtr;
 
-    cout << "opening file " << fileName << endl;
+  cout << "opening file " << fileName << endl;
 
-    // open the file and read in the header page and the first data page
-    if ((status = db.openFile(fileName, filePtr)) == OK)
+  // open the file and read in the header page and the first data page
+  if ((status = db.openFile(fileName, filePtr)) == OK)
     {
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
+      // read and pin header page
+      status = filePtr->getFirstPage(headerPageNo);
+      CHKSTAT2(status); // UNIXERR
+      status = bd.bufMgr->readPage(filePtr, headerPageNo, headerPage);
+      CHKSTAT2(status); // UNIXERR, BUFFEREXCEEDED, HASHTBLERR
+      hdrDirtyFlag = false;
+      // read and pin first data page
+      curPageNo = headerPage->firstPage;
+      status = bd.bufMgr->readPage(filePtr, curPageNo, curPage);
+      CHKSTAT2(status); // UNIXERR, BUFFEREXCEEDED, HASHTBLERR
+      curDirtyFlag = false;
+      curRec = NULLRID;
+      returnStatus = OK;
+      return;
     }
-    else
+  else
     {
-    	cerr << "open of heap file failed\n";
-		returnStatus = status;
-		return;
+      cerr << "open of heap file failed\n";
+      returnStatus = status;
+      return;
     }
 }
 
@@ -117,16 +137,23 @@ const int HeapFile::getRecCnt() const
 
 const Status HeapFile::getRecord(const RID &  rid, Record & rec)
 {
-    Status status;
+  Status status;
 
-    // cout<< "getRecord. record (" << rid.pageNo << "." << rid.slotNo << ")" << endl;
-   
-   
-   
-   
-   
-   
-   
+  // cout<< "getRecord. record (" << rid.pageNo << "." << rid.slotNo << ")" << endl;
+  if(rid->pageNo == curPageNo){
+    // this page is currently pinned
+    status = curPage->getRecord(rid, rec);
+    return status; // INVALIDSLOTNO
+  } else {
+    // this page is not pinned
+    status = db.bufMgr->unPinPage(filePtr, curPageNo, curDirtyFlag);
+    CHKSTAT(status); // HASHNOTFOUND, PAGENOTPINNED
+    status = db.bufMgr->readPage(filePtr, rid->pageNo, curPage);
+    CHKSTAT(status); // UNIXERR, HASHTBLERR, BUFFEREXCEEDED
+    curPageNo = rid->pageNo;
+    status = curPage->getRecord(rid, rec);
+    return status;
+  }
 }
 
 HeapFileScan::HeapFileScan(const string & name,

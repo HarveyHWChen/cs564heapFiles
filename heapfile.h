@@ -13,6 +13,12 @@ using namespace std;
 
 extern DB db;
 
+#define CHKSTAT(c) { if(c != OK) { \
+                          return c; \
+                        } \
+                      }
+
+
 // define if debug output wanted
 //#define DEBUGREL
 

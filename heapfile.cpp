@@ -1,5 +1,6 @@
 #include "heapfile.h"
 #include "error.h"
+extern BufMgr* bufMgr; 
 
 #define CHKSTAT2(c) { if(c != OK) { \
                           returnStatus c; \
@@ -146,9 +147,9 @@ const Status HeapFile::getRecord(const RID &  rid, Record & rec)
     return status; // INVALIDSLOTNO
   } else {
     // this page is not pinned
-    status = db.bufMgr->unPinPage(filePtr, curPageNo, curDirtyFlag);
+    status = bufMgr->unPinPage(filePtr, curPageNo, curDirtyFlag);
     CHKSTAT(status); // HASHNOTFOUND, PAGENOTPINNED
-    status = db.bufMgr->readPage(filePtr, rid->pageNo, curPage);
+    status = bufMgr->readPage(filePtr, rid->pageNo, curPage);
     CHKSTAT(status); // UNIXERR, HASHTBLERR, BUFFEREXCEEDED
     curPageNo = rid->pageNo;
     status = curPage->getRecord(rid, rec);
@@ -247,20 +248,45 @@ const Status HeapFileScan::scanNext(RID& outRid)
 {
     Status 	status = OK;
     RID		nextRid;
-    RID		tmpRid;
+    RID		tmpRid;// it is curr rid; 
     int 	nextPageNo;
     Record      rec;
-
     
-	
-	
-	
-	
-	
-	
-	
-	
-	
+    status = this->markScan();
+    tmpRid = markedRec;
+    while(status != FILEEOF ){
+      status = curPage->nextRecord(tmpRid,nextRid);
+      // if we reach the last record of a page; 
+      if (ENDOFPAGE == status){
+	// if the current page is not the end of file,
+	// we continue to check the next page of file;
+	// otherwise we finish the scanning. 
+	if(this->headerPage->lastPage == curPageNo){
+	  status = FILEEOF;// end of file
+	}
+	else{
+	 
+	  status = curPage->getNextPage(nextPageNo);//get nextPage;
+	  if(status != OK) return status; 
+	  status = bufMgr->unPinPage(filePtr, curPageNo, curDirtyFlag);
+	  if(status != OK) return status;
+	  status = bufMgr->readPage(filePtr, nextPageNo, curPage);
+	  if(status != OK) return status; 
+	}
+      }
+      // if it is not the last page; 
+      else{
+	status = curPage->getRecord(nextRid, rec);
+	//check if this record is match;
+	if(this->matchRec(rec)){
+	  outRid = nextRid;
+	  curRec = nextRid;//markScan..
+	  break;
+	}
+	else tmpRid = nextRid;
+      }
+    }
+    return status;
 }
 
 
@@ -372,30 +398,59 @@ InsertFileScan::~InsertFileScan()
 // Insert a record into the file
 const Status InsertFileScan::insertRecord(const Record & rec, RID& outRid)
 {
-    Page*	newPage;
-    int		newPageNo;
-    Status	status, unpinstatus;
-    RID		rid;
+  Page*	newPage;
+  int		newPageNo;
+  Status	status, unpinstatus;
+  RID		rid;
 
-    // check for very large records
-    if ((unsigned int) rec.length > PAGESIZE-DPFIXED)
+  // check for very large records
+  if ((unsigned int) rec.length > PAGESIZE-DPFIXED)
     {
-        // will never fit on a page, so don't even bother looking
-        return INVALIDRECLEN;
+      // will never fit on a page, so don't even bother looking
+      return INVALIDRECLEN;
     }
+    
+  // check if the curr page is not the last page, we need to make
+  // currPage pointing to last page, then insert. 
+  if(this->headerPage->lastPage != curPageNo){
+      status=bufMgr->unPinPage(filePtr, curPageNo, curDirtyFlag);
+      CHKSTAT(status);
+      status=bufMgr->readPage(filePtr, this->headerPage->lastPage, curPage);
+      CHKSTAT(status);
+      curDirtyFlag = false;
+      curPageNo =this-> headerPage->lastPage;
+  }
+    
+  //insert:
+  status = curPage->insertRecord(rec, rid);
+  // check if this page is full;
+  if(status == NOSPACE){
+    status = bufMgr->allocPage(filePtr, newPageNo,newPage);
+    CHKSTAT(status);
+    status = curPage->setNextPage(newPageNo);
+    CHKSTAT(status);
+    // unpin the currPage;
+    status = bufMgr->unPinPage(filePtr, curPageNo, curDirtyFlag);
+    CHKSTAT(status);
+	
+    // update the headerPage and insert the record;
+    this->headerPage->lastPage = newPageNo;
+    this->headerPage->pageCnt++;
+	
+    curPage = newPage;
+    curPageNo = newPageNo;
+    curDirtyFlag = false;
+	
+    status = curPage->insertRecord(rec,rid);
+    CHKSTAT(status);
+  }
 
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
+  if(status == OK){
+    outRid = rid;
+    curDirtyFlag = true;
+    headerPage->recCnt++;// increase the recCnt. 
+  }
+  return status; 
 }
 
 

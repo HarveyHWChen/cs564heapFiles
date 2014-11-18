@@ -3,7 +3,7 @@
 extern BufMgr* bufMgr; 
 
 #define CHKSTAT2(c) { if(c != OK) { \
-                          returnStatus c; \
+                          returnStatus =  c; \
                         } \
                       }
 
@@ -14,8 +14,8 @@ const Status createHeapFile(const string fileName)
   Status 		status;
   FileHdrPage*	hdrPage;
   int			hdrPageNo;
-  int			newPageNo;
-  Page*		newPage;
+  //  int			newPageNo;
+  //  Page*		newPage;
 
   // try to open the file. This should return an error
   status = db.openFile(fileName, file);
@@ -26,26 +26,26 @@ const Status createHeapFile(const string fileName)
       status =  db.createFile(fileName);
       CHKSTAT(status); //BADFILE, FILEEXISTS, UNIXERR
       status = db.openFile(fileName, file);
-      CHKSTAT(statues); //BADFILE, UNIXERR
+      CHKSTAT(status); //BADFILE, UNIXERR
       // initialize fileHdrPage
       Page* headerPage;
-      status = db.bufMgr->allocPage(file, hdrPageNo, headerPage);
+      status = bufMgr->allocPage(file, hdrPageNo, headerPage);
       CHKSTAT(status); //UNIXERR, HASHTBLERR, BUFFEREXCEEDED
       hdrPage = (FileHdrPage*) headerPage;
       // initialize header page struct
-      strcpy(hdrPage->fileName, fileName);
+      strcpy(hdrPage->fileName, fileName.c_str());
       hdrPage->pageCnt = 1;
       hdrPage->recCnt = 0;
       // initializr first data page
       Page* firstDataPage;
-      status = db.bufMgr->allocPage(file, hdrPage.firstPage, firstDataPage);
+      status = bufMgr->allocPage(file, hdrPage->firstPage, firstDataPage);
       CHKSTAT(status); //UNIXERR, HASHTBLERR, BUFFEREXCEEDED
-      firstDataPage.init();
-      hdrPage.lastPage = hdrPage.firstPage();
+      firstDataPage->init(hdrPage->firstPage);
+      hdrPage->lastPage = hdrPage->firstPage;
       // unpin, dirty
-      status = db.bufMgr->unPinPage(file, hdrPage.firstPage, true);
+      status = bufMgr->unPinPage(file, hdrPage->firstPage, true);
       CHKSTAT(status); //HASHNOTFOUND, PAGENOTPINNED
-      status = db.bugMgr->unpinPage(file, hdrPageNo, true);
+      status = bufMgr->unPinPage(file, hdrPageNo, true);
       CHKSTAT(status); //HASHNOTFOUND, PAGENOTPINNED
       return OK;
     }
@@ -72,12 +72,13 @@ HeapFile::HeapFile(const string & fileName, Status& returnStatus)
       // read and pin header page
       status = filePtr->getFirstPage(headerPageNo);
       CHKSTAT2(status); // UNIXERR
-      status = bd.bufMgr->readPage(filePtr, headerPageNo, headerPage);
+      status = bufMgr->readPage(filePtr, headerPageNo, pagePtr);
+      headerPage = (FileHdrPage*) pagePtr;
       CHKSTAT2(status); // UNIXERR, BUFFEREXCEEDED, HASHTBLERR
       hdrDirtyFlag = false;
       // read and pin first data page
       curPageNo = headerPage->firstPage;
-      status = bd.bufMgr->readPage(filePtr, curPageNo, curPage);
+      status = bufMgr->readPage(filePtr, curPageNo, curPage);
       CHKSTAT2(status); // UNIXERR, BUFFEREXCEEDED, HASHTBLERR
       curDirtyFlag = false;
       curRec = NULLRID;
@@ -141,7 +142,7 @@ const Status HeapFile::getRecord(const RID &  rid, Record & rec)
   Status status;
 
   // cout<< "getRecord. record (" << rid.pageNo << "." << rid.slotNo << ")" << endl;
-  if(rid->pageNo == curPageNo){
+  if(rid.pageNo == curPageNo){
     // this page is currently pinned
     status = curPage->getRecord(rid, rec);
     return status; // INVALIDSLOTNO
@@ -149,9 +150,9 @@ const Status HeapFile::getRecord(const RID &  rid, Record & rec)
     // this page is not pinned
     status = bufMgr->unPinPage(filePtr, curPageNo, curDirtyFlag);
     CHKSTAT(status); // HASHNOTFOUND, PAGENOTPINNED
-    status = bufMgr->readPage(filePtr, rid->pageNo, curPage);
+    status = bufMgr->readPage(filePtr, rid.pageNo, curPage);
     CHKSTAT(status); // UNIXERR, HASHTBLERR, BUFFEREXCEEDED
-    curPageNo = rid->pageNo;
+    curPageNo = rid.pageNo;
     status = curPage->getRecord(rid, rec);
     return status;
   }
@@ -400,7 +401,7 @@ const Status InsertFileScan::insertRecord(const Record & rec, RID& outRid)
 {
   Page*	newPage;
   int		newPageNo;
-  Status	status, unpinstatus;
+  Status	status;//, unpinstatus;
   RID		rid;
 
   // check for very large records

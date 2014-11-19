@@ -253,7 +253,7 @@ const Status HeapFileScan::scanNext(RID& outRid)
   int 	nextPageNo;
   Record      rec;
     
-  status = this->markScan();
+  /*status = this->markScan();
   tmpRid = markedRec;
   while(status != FILEEOF){
     status = curPage->nextRecord(tmpRid,nextRid);
@@ -282,12 +282,52 @@ const Status HeapFileScan::scanNext(RID& outRid)
       if(this->matchRec(rec)){
 	outRid = nextRid;
 	curRec = nextRid;//markScan..
+	status = OK;
 	break;
       }
       else tmpRid = nextRid;
     }
   }
-  return status;
+  return status;*/
+  //  markScan();
+  
+  while(true){
+    // fetch first record on this page
+    status = curPage->firstRecord(tmpRid);
+    CHKSTAT(status);
+    status = curPage->getRecord(tmpRid, rec);
+    CHKSTAT(status);
+    if(matchRec(rec)){
+      outRid = tmpRid;
+      return OK;
+    } else {
+      // first record not match. Check following record
+      while(curPage->nextRecord(tmpRid, nextRid) == OK){
+	tmpRid = nextRid;
+	status = curPage->getRecord(tmpRid, rec);
+	CHKSTAT(status);
+	if(matchRec(rec)){
+	  outRid = tmpRid;
+	  return OK;
+	}
+      }
+    }
+    // not on this page, bring on next page
+    if(curPageNo == headerPage->lastPage){
+      // already last page
+      return FILEEOF;
+    } else {
+      curPage->getNextPage(nextPageNo);
+      status = bufMgr->unPinPage(filePtr, curPageNo, curDirtyFlag);
+      CHKSTAT(status);
+      status = bufMgr->readPage(filePtr, nextPageNo, curPage);
+      CHKSTAT(status);
+      curPageNo = nextPageNo;
+      curDirtyFlag = false;
+    }
+  }
+  // if control reached here, something weird must have happen
+  return NOTUSED1;
 }
 
 

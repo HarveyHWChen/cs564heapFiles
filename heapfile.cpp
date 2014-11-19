@@ -254,63 +254,58 @@ const Status HeapFileScan::scanNext(RID& outRid)
   Record      rec;
     
   /*status = this->markScan();
-  tmpRid = markedRec;
-  while(status != FILEEOF){
+    tmpRid = markedRec;
+    while(status != FILEEOF){
     status = curPage->nextRecord(tmpRid,nextRid);
     // if we reach the last record of a page; 
     if (ENDOFPAGE == status){
-      // if the current page is not the end of file,
-      // we continue to check the next page of file;
-      // otherwise we finish the scanning. 
-      if(headerPage->lastPage == curPageNo){
-	status = FILEEOF;// end of file
-	break;
-      } else {
-	status = curPage->getNextPage(nextPageNo);//get nextPage;
-	if(status != OK) return status; 
-	status = bufMgr->unPinPage(filePtr, curPageNo, curDirtyFlag);
-	if(status != OK) return status;
-	curPageNo = nextPageNo;
-	curDirtyFlag = false;
-	status = bufMgr->readPage(filePtr, curPageNo, curPage);
-	if(status != OK) return status;
-      }
-    } else{
-      // if it is not the last page;    
-      status = curPage->getRecord(nextRid, rec);
-      //check if this record is match;
-      if(this->matchRec(rec)){
-	outRid = nextRid;
-	curRec = nextRid;//markScan..
-	status = OK;
-	break;
-      }
-      else tmpRid = nextRid;
+    // if the current page is not the end of file,
+    // we continue to check the next page of file;
+    // otherwise we finish the scanning. 
+    if(headerPage->lastPage == curPageNo){
+    status = FILEEOF;// end of file
+    break;
+    } else {
+    status = curPage->getNextPage(nextPageNo);//get nextPage;
+    if(status != OK) return status; 
+    status = bufMgr->unPinPage(filePtr, curPageNo, curDirtyFlag);
+    if(status != OK) return status;
+    curPageNo = nextPageNo;
+    curDirtyFlag = false;
+    status = bufMgr->readPage(filePtr, curPageNo, curPage);
+    if(status != OK) return status;
     }
-  }
-  return status;*/
-  //  markScan();
-  
+    } else{
+    // if it is not the last page;    
+    status = curPage->getRecord(nextRid, rec);
+    //check if this record is match;
+    if(this->matchRec(rec)){
+    outRid = nextRid;
+    curRec = nextRid;//markScan..
+    status = OK;
+    break;
+    }
+    else tmpRid = nextRid;
+    }
+    }
+    return status;*/
+  markScan();
+
   while(true){
     // fetch first record on this page
-    status = curPage->firstRecord(tmpRid);
-    CHKSTAT(status);
+    if(curRec.pageNo != curPageNo){
+      status = curPage->firstRecord(tmpRid);
+      CHKSTAT(status);
+    } else {
+      status = curPage->nextRecord(tmpRid, nextRid);
+      CHKSTAT(status);
+    }
     status = curPage->getRecord(tmpRid, rec);
     CHKSTAT(status);
     if(matchRec(rec)){
+      curRec = tmpRid;
       outRid = tmpRid;
       return OK;
-    } else {
-      // first record not match. Check following record
-      while(curPage->nextRecord(tmpRid, nextRid) == OK){
-	tmpRid = nextRid;
-	status = curPage->getRecord(tmpRid, rec);
-	CHKSTAT(status);
-	if(matchRec(rec)){
-	  outRid = tmpRid;
-	  return OK;
-	}
-      }
     }
     // not on this page, bring on next page
     if(curPageNo == headerPage->lastPage){
@@ -454,12 +449,12 @@ const Status InsertFileScan::insertRecord(const Record & rec, RID& outRid)
   // check if the curr page is not the last page, we need to make
   // currPage pointing to last page, then insert. 
   if(headerPage->lastPage != curPageNo){
-      status = bufMgr->unPinPage(filePtr, curPageNo, curDirtyFlag);
-      CHKSTAT(status);
-      status = bufMgr->readPage(filePtr, headerPage->lastPage, curPage);
-      CHKSTAT(status);
-      curDirtyFlag = false;
-      curPageNo = headerPage->lastPage;
+    status = bufMgr->unPinPage(filePtr, curPageNo, curDirtyFlag);
+    CHKSTAT(status);
+    status = bufMgr->readPage(filePtr, headerPage->lastPage, curPage);
+    CHKSTAT(status);
+    curDirtyFlag = false;
+    curPageNo = headerPage->lastPage;
   }
     
   //insert:
@@ -486,15 +481,15 @@ const Status InsertFileScan::insertRecord(const Record & rec, RID& outRid)
     status = curPage->insertRecord(rec,rid);
     CHKSTAT(status);
   }
+  // update curRec as well
+  curRec = rid;
+  outRid = rid;
+  curDirtyFlag = true;
+  headerPage->recCnt++;// increase the recCnt. 
 
-  if(status == OK){
-    // update curRec as well
-    curRec = rid;
-    outRid = rid;
-    curDirtyFlag = true;
-    headerPage->recCnt++;// increase the recCnt. 
-  }
   return status; 
+
+  
 }
 
 
